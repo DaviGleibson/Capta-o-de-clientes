@@ -76,7 +76,8 @@ export default function DashboardPage() {
     if (mounted) {
       const stored = localStorage.getItem("contactedBusinesses");
       if (stored) {
-        setContactedBusinesses(new Set(JSON.parse(stored)));
+        const contactedArray: string[] = JSON.parse(stored);
+        setContactedBusinesses(new Set<string>(contactedArray));
       }
     }
   }, [mounted]);
@@ -275,7 +276,7 @@ export default function DashboardPage() {
     const newContacted = new Set(contactedBusinesses);
     newContacted.add(businessId);
     setContactedBusinesses(newContacted);
-    localStorage.setItem("contactedBusinesses", JSON.stringify([...newContacted]));
+    localStorage.setItem("contactedBusinesses", JSON.stringify(Array.from(newContacted)));
 
     const business = businesses.find((b) => b.id === businessId);
     if (business) {

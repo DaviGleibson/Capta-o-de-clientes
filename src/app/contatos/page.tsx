@@ -49,9 +49,10 @@ export default function ContatosPage() {
     localStorage.setItem("contactedBusinessesData", JSON.stringify(updated));
     
     // Update contacted set
-    const contactedSet = new Set(JSON.parse(localStorage.getItem("contactedBusinesses") || "[]"));
+    const contactedArray: string[] = JSON.parse(localStorage.getItem("contactedBusinesses") || "[]");
+    const contactedSet = new Set<string>(contactedArray);
     contactedSet.delete(businessId);
-    localStorage.setItem("contactedBusinesses", JSON.stringify([...contactedSet]));
+    localStorage.setItem("contactedBusinesses", JSON.stringify(Array.from(contactedSet)));
   };
 
   if (!mounted) {
