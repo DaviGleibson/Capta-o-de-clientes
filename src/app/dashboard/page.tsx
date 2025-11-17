@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Search, MapPin, Filter, Loader2, AlertCircle, Copy } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
@@ -16,7 +16,6 @@ import {
   Pagination,
   PaginationContent,
   PaginationLink,
-  PaginationItem,
   PaginationPrevious,
   PaginationNext,
 } from "@/components/ui/pagination";
@@ -49,6 +48,13 @@ export default function DashboardPage() {
   const [allBusinesses, setAllBusinesses] = useState<Business[]>([]);
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [visiblePage, setVisiblePage] = useState(1);
+  const [googlePage, setGooglePage] = useState(1);
+  const [hasMoreResults, setHasMoreResults] = useState(false);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [availableCities, setAvailableCities] = useState<string[]>([]);
+  const [citiesLoading, setCitiesLoading] = useState(false);
+  const [citiesError, setCitiesError] = useState("");
+  const cityCache = useRef<Record<string, string[]>>({});
 
   const { toast } = useToast();
 
@@ -87,6 +93,49 @@ export default function DashboardPage() {
     }
   }, [mounted]);
 
+  // Load municipalities dynamically using IBGE API (fallback to local list)
+  useEffect(() => {
+    if (!selectedState) {
+      setAvailableCities([]);
+      setCitiesError("");
+      return;
+    }
+
+    if (cityCache.current[selectedState]) {
+      setAvailableCities(cityCache.current[selectedState]);
+      setCitiesError("");
+      return;
+    }
+
+    const fetchCities = async () => {
+      setCitiesLoading(true);
+      setCitiesError("");
+      try {
+        const response = await fetch(
+          `https://servicodados.ibge.gov.br/api/v1/localidades/estados/${selectedState}/municipios`,
+        );
+        if (!response.ok) {
+          throw new Error("Erro ao buscar municípios");
+        }
+        const data = await response.json();
+        const cityNames = data
+          .map((item: { nome: string }) => item.nome)
+          .sort((a: string, b: string) => a.localeCompare(b));
+        cityCache.current[selectedState] = cityNames;
+        setAvailableCities(cityNames);
+      } catch (err) {
+        console.error("Erro ao carregar municípios:", err);
+        const fallbackCities = stateCities[selectedState] || [];
+        setAvailableCities(fallbackCities);
+        setCitiesError("Não foi possível carregar todos os municípios. Exibindo lista reduzida.");
+      } finally {
+        setCitiesLoading(false);
+      }
+    };
+
+    fetchCities();
+  }, [selectedState]);
+
   // Apply filters
   useEffect(() => {
     let filtered = [...businesses];
@@ -102,29 +151,43 @@ export default function DashboardPage() {
     setFilteredBusinesses(filtered);
   }, [businesses, filterPhone, filterEmail]);
 
+  useEffect(() => {
+    setVisiblePage(1);
+  }, [filterPhone, filterEmail]);
+
+  useEffect(() => {
+    if (selectedCity && !availableCities.includes(selectedCity)) {
+      setSelectedCity("");
+    }
+  }, [availableCities, selectedCity]);
+
   const handleSearch = async (page: number = 1) => {
     if (!searchQuery.trim()) {
       setError("Por favor, digite uma categoria de negócio.");
-      return;
+      return false;
     }
 
     if (!selectedState || !selectedCity) {
       setError("Por favor, selecione o estado e município.");
-      return;
+      return false;
     }
 
     if (!mapsLoaded || !window.google) {
       setError("Aguardando carregamento do Google Maps...");
-      return;
+      return false;
     }
 
-    setLoading(true);
-    setError("");
     if (page === 1) {
+      setLoading(true);
       setHasSearched(true);
       setAllBusinesses([]);
       setBusinesses([]);
+      setVisiblePage(1);
+      setGooglePage(1);
+    } else {
+      setIsFetchingMore(true);
     }
+    setError("");
 
     try {
       const { Place } = await window.google.maps.importLibrary("places");
@@ -178,20 +241,31 @@ export default function DashboardPage() {
           };
         });
 
-        const updatedBusinesses = page === 1 ? detailedBusinesses : [...allBusinesses, ...detailedBusinesses];
-        setAllBusinesses(updatedBusinesses);
-        setBusinesses(updatedBusinesses);
+        setAllBusinesses((prev) => {
+          const updatedBusinesses = page === 1 ? detailedBusinesses : [...prev, ...detailedBusinesses];
+          setBusinesses(updatedBusinesses);
+          return updatedBusinesses;
+        });
+        setHasMoreResults(places.length === 20);
+        setGooglePage(page);
       } else {
         if (page === 1) {
           setBusinesses([]);
           setAllBusinesses([]);
         }
+        setHasMoreResults(false);
       }
-      setLoading(false);
+      return true;
     } catch (err) {
       setError("Erro ao buscar negócios. Por favor, tente novamente.");
       console.error(err);
-      setLoading(false);
+      return false;
+    } finally {
+      if (page === 1) {
+        setLoading(false);
+      } else {
+        setIsFetchingMore(false);
+      }
     }
   };
 
@@ -246,16 +320,31 @@ export default function DashboardPage() {
     }
   };
 
-  const availableCities = selectedState ? stateCities[selectedState] || [] : [];
   const totalPages = Math.ceil(filteredBusinesses.length / PAGE_SIZE);
   const paginatedBusinesses = useMemo(() => {
     const startIndex = (visiblePage - 1) * PAGE_SIZE;
     return filteredBusinesses.slice(startIndex, startIndex + PAGE_SIZE);
   }, [filteredBusinesses, visiblePage]);
 
-  useEffect(() => {
-    setVisiblePage(1);
-  }, [filteredBusinesses.length]);
+  const handlePreviousPage = () => {
+    if (visiblePage > 1) {
+      setVisiblePage((prev) => prev - 1);
+    }
+  };
+
+  const handleNextPage = async () => {
+    if (visiblePage < totalPages) {
+      setVisiblePage((prev) => prev + 1);
+      return;
+    }
+
+    if (hasMoreResults && !isFetchingMore && !loading) {
+      const success = await handleSearch(googlePage + 1);
+      if (success) {
+        setVisiblePage((prev) => prev + 1);
+      }
+    }
+  };
 
   if (!mounted) {
     return null;
@@ -305,10 +394,20 @@ export default function DashboardPage() {
                   <Select 
                     value={selectedCity} 
                     onValueChange={setSelectedCity}
-                    disabled={!selectedState}
+                    disabled={!selectedState || availableCities.length === 0}
                   >
                     <SelectTrigger id="city" className="h-12">
-                      <SelectValue placeholder={selectedState ? "Selecione o município" : "Selecione o estado primeiro"} />
+                      <SelectValue
+                        placeholder={
+                          !selectedState
+                            ? "Selecione o estado primeiro"
+                            : citiesLoading
+                              ? "Carregando municípios..."
+                              : availableCities.length === 0
+                                ? "Nenhum município disponível"
+                                : "Selecione o município"
+                        }
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {availableCities.map((city) => (
@@ -318,6 +417,9 @@ export default function DashboardPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {citiesError && (
+                    <p className="text-xs text-red-600">{citiesError}</p>
+                  )}
                 </div>
               </div>
 
@@ -474,9 +576,7 @@ export default function DashboardPage() {
                         href="#"
                         onClick={(event) => {
                           event.preventDefault();
-                          if (visiblePage > 1) {
-                            setVisiblePage((prev) => prev - 1);
-                          }
+                          handlePreviousPage();
                         }}
                         className={visiblePage === 1 ? "pointer-events-none opacity-50" : ""}
                       />
@@ -495,16 +595,25 @@ export default function DashboardPage() {
                       ))}
                       <PaginationNext
                         href="#"
-                        onClick={(event) => {
+                        onClick={async (event) => {
                           event.preventDefault();
-                          if (visiblePage < totalPages) {
-                            setVisiblePage((prev) => prev + 1);
-                          }
+                          await handleNextPage();
                         }}
-                        className={visiblePage === totalPages ? "pointer-events-none opacity-50" : ""}
+                        className={
+                          visiblePage === totalPages && !hasMoreResults
+                            ? "pointer-events-none opacity-50"
+                            : ""
+                        }
                       />
                     </PaginationContent>
                   </Pagination>
+                )}
+
+                {isFetchingMore && (
+                  <div className="mt-6 flex items-center justify-center gap-2 text-sm text-gray-600">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Carregando mais resultados...
+                  </div>
                 )}
 
               </>
