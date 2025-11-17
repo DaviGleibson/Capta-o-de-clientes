@@ -21,41 +21,33 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
 
-    // Get users from localStorage
-    const storedUsers = localStorage.getItem("users");
-    const users = storedUsers ? JSON.parse(storedUsers) : [];
+    try {
+      const response = await fetch("/api/auth/login", {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
 
-    // Add master user if not exists
-    const masterUser = {
-      email: "orbite@orbite.com.br",
-      password: "D@viS@ntos1982",
-      active: true,
-      isMaster: true
-    };
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Erro ao realizar login");
+      }
 
-    const allUsers = [masterUser, ...users];
+      const user = data.user;
+      localStorage.setItem("userEmail", user.email);
+      localStorage.setItem("isMaster", String(user.is_master));
 
-    // Find user
-    const user = allUsers.find(u => u.email === email && u.password === password);
-
-    if (!user) {
-      setError("E-mail ou senha incorretos");
+      setTimeout(() => {
+        router.push("/dashboard");
+      }, 500);
+    } catch (error: any) {
+      setError(error?.message || "Erro ao realizar login");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    if (!user.active && !user.isMaster) {
-      setError("Usuário desativado. Entre em contato com o administrador.");
-      setLoading(false);
-      return;
-    }
-
-    // Save login
-    localStorage.setItem("userEmail", email);
-    
-    setTimeout(() => {
-      router.push("/dashboard");
-    }, 500);
   };
 
   return (

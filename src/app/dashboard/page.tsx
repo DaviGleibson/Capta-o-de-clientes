@@ -32,6 +32,7 @@ export default function DashboardPage() {
   const PAGE_SIZE = 9;
   const router = useRouter();
   const [userEmail, setUserEmail] = useState("");
+  const [isMaster, setIsMaster] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedState, setSelectedState] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
@@ -65,6 +66,7 @@ export default function DashboardPage() {
       router.push("/login");
     } else {
       setUserEmail(email);
+      setIsMaster(localStorage.getItem("isMaster") === "true");
       setMounted(true);
     }
   }, [router]);
@@ -352,7 +354,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
-      <Header userEmail={userEmail} />
+      <Header userEmail={userEmail} isMaster={isMaster} />
 
       <main className="container mx-auto px-4 py-8">
         {/* Search Section */}

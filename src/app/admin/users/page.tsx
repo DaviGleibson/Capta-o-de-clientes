@@ -25,89 +25,184 @@ interface User {
   active: boolean;
 }
 
+interface User {
+  email: string;
+  active: boolean;
+  created_at: string;
+  is_master: boolean;
+}
+
 export default function AdminUsersPage() {
   const router = useRouter();
   const [userEmail, setUserEmail] = useState("");
+  const [isMaster, setIsMaster] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error">("success");
 
   useEffect(() => {
     const email = localStorage.getItem("userEmail");
-    if (!email || email !== "orbite@orbite.com.br") {
+    const masterFlag = localStorage.getItem("isMaster") === "true";
+
+    if (!email || !masterFlag) {
       router.push("/dashboard");
       return;
     }
     setUserEmail(email);
+    setIsMaster(masterFlag);
 
-    // Load users
-    const storedUsers = localStorage.getItem("users");
-    if (storedUsers) {
-      setUsers(JSON.parse(storedUsers));
-    }
+    fetchUsers(email);
   }, [router]);
 
+  const authorizedFetch = async (
+    url: string,
+    options?: RequestInit,
+    email?: string,
+  ) => {
+    return fetch(url, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(options?.headers || {}),
+        ...(email ? { "x-user-email": email } : {}),
+      },
+    });
+  };
+
+  const fetchUsers = async (email: string) => {
+    try {
+      setLoading(true);
+      const response = await authorizedFetch("/api/users", {}, email);
+      if (!response.ok) {
+        throw new Error((await response.json()).error || "Erro ao listar usuários");
+      }
+      const data = await response.json();
+      setUsers(data.users || []);
+    } catch (error: any) {
+      setMessage(error?.message || "Erro ao carregar usuários");
+      setMessageType("error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const saveUsers = (updatedUsers: User[]) => {
-    localStorage.setItem("users", JSON.stringify(updatedUsers));
     setUsers(updatedUsers);
   };
 
   const handleAddUser = () => {
-    if (!newEmail || !newPassword) {
-      setMessage("Preencha todos os campos");
-      setMessageType("error");
-      return;
-    }
+    const addUser = async () => {
+      if (!newEmail || !newPassword) {
+        setMessage("Preencha todos os campos");
+        setMessageType("error");
+        return;
+      }
 
-    if (newEmail === "orbite@orbite.com.br") {
-      setMessage("Não é possível adicionar o usuário master");
-      setMessageType("error");
-      return;
-    }
+      try {
+        const response = await authorizedFetch(
+          "/api/users",
+          {
+            method: "POST",
+            body: JSON.stringify({ email: newEmail, password: newPassword }),
+          },
+          userEmail,
+        );
 
-    if (users.find(u => u.email === newEmail)) {
-      setMessage("Usuário já existe");
-      setMessageType("error");
-      return;
-    }
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || "Erro ao adicionar usuário");
+        }
 
-    const newUser: User = {
-      email: newEmail,
-      password: newPassword,
-      active: true
+        const data = await response.json();
+        saveUsers([...users, data.user]);
+        setNewEmail("");
+        setNewPassword("");
+        setMessage("Usuário adicionado com sucesso!");
+        setMessageType("success");
+      } catch (error: any) {
+        setMessage(error?.message || "Erro ao adicionar usuário");
+        setMessageType("error");
+      }
     };
 
-    const updatedUsers = [...users, newUser];
-    saveUsers(updatedUsers);
-    setNewEmail("");
-    setNewPassword("");
-    setMessage("Usuário adicionado com sucesso!");
-    setMessageType("success");
+    addUser();
   };
 
   const handleToggleActive = (email: string) => {
-    const updatedUsers = users.map(u => 
-      u.email === email ? { ...u, active: !u.active } : u
-    );
-    saveUsers(updatedUsers);
-    setMessage("Status do usuário atualizado");
-    setMessageType("success");
+    const toggle = async () => {
+      try {
+        const user = users.find((u) => u.email === email);
+        if (!user) return;
+
+        const response = await authorizedFetch(
+          `/api/users/${encodeURIComponent(email)}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ active: !user.active }),
+          },
+          userEmail,
+        );
+
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || "Erro ao atualizar usuário");
+        }
+
+        const data = await response.json();
+        const updatedUsers = users.map((u) =>
+          u.email === email ? data.user : u,
+        );
+        saveUsers(updatedUsers);
+        setMessage("Status do usuário atualizado");
+        setMessageType("success");
+      } catch (error: any) {
+        setMessage(error?.message || "Erro ao atualizar usuário");
+        setMessageType("error");
+      }
+    };
+
+    toggle();
   };
 
   const handleDeleteUser = (email: string) => {
-    if (confirm(`Tem certeza que deseja excluir o usuário ${email}?`)) {
-      const updatedUsers = users.filter(u => u.email !== email);
-      saveUsers(updatedUsers);
-      setMessage("Usuário excluído com sucesso");
-      setMessageType("success");
-    }
+    const remove = async () => {
+      if (confirm(`Tem certeza que deseja excluir o usuário ${email}?`)) {
+        try {
+          const response = await authorizedFetch(
+            `/api/users/${encodeURIComponent(email)}`,
+            { method: "DELETE" },
+            userEmail,
+          );
+
+          if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.error || "Erro ao excluir usuário");
+          }
+
+          const updatedUsers = users.filter((u) => u.email !== email);
+          saveUsers(updatedUsers);
+          setMessage("Usuário excluído com sucesso");
+          setMessageType("success");
+        } catch (error: any) {
+          setMessage(error?.message || "Erro ao excluir usuário");
+          setMessageType("error");
+        }
+      }
+    };
+
+    remove();
   };
+
+  if (!isMaster) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
-      <Header userEmail={userEmail} />
+      <Header userEmail={userEmail} isMaster={isMaster} />
 
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-6xl mx-auto">
@@ -173,7 +268,11 @@ export default function AdminUsersPage() {
               Usuários Cadastrados ({users.length})
             </h2>
             
-            {users.length === 0 ? (
+            {loading ? (
+              <div className="text-center py-12 text-gray-500">
+                Carregando usuários...
+              </div>
+            ) : users.length === 0 ? (
               <div className="text-center py-12 text-gray-500">
                 Nenhum usuário cadastrado ainda
               </div>
@@ -183,8 +282,8 @@ export default function AdminUsersPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>E-mail</TableHead>
-                      <TableHead>Senha</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Tipo</TableHead>
                       <TableHead className="text-right">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -192,27 +291,40 @@ export default function AdminUsersPage() {
                     {users.map((user) => (
                       <TableRow key={user.email}>
                         <TableCell className="font-medium">{user.email}</TableCell>
-                        <TableCell className="font-mono text-sm">••••••••</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <Switch
                               checked={user.active}
                               onCheckedChange={() => handleToggleActive(user.email)}
+                              disabled={user.is_master}
                             />
                             <span className={user.active ? "text-green-600" : "text-red-600"}>
                               {user.active ? "Ativo" : "Desativado"}
                             </span>
                           </div>
                         </TableCell>
+                        <TableCell>
+                          {user.is_master ? (
+                            <span className="text-xs uppercase text-purple-600 font-semibold">
+                              Master
+                            </span>
+                          ) : (
+                            <span className="text-xs uppercase text-gray-500">
+                              Usuário
+                            </span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteUser(user.email)}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {!user.is_master && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteUser(user.email)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}

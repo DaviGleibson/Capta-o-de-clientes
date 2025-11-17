@@ -6,14 +6,16 @@ import { useRouter } from "next/navigation";
 
 interface HeaderProps {
   userEmail?: string;
+  isMaster?: boolean;
 }
 
-export default function Header({ userEmail }: HeaderProps) {
+export default function Header({ userEmail, isMaster }: HeaderProps) {
   const router = useRouter();
-  const isMasterUser = userEmail === "orbite@orbite.com.br";
+  const isMasterUser = Boolean(isMaster);
 
   const handleLogout = () => {
     localStorage.removeItem("userEmail");
+    localStorage.removeItem("isMaster");
     router.push("/");
   };
 

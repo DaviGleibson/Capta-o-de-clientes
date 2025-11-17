@@ -11,6 +11,7 @@ import { MessageCircle, Trash2 } from "lucide-react";
 export default function ContatosPage() {
   const router = useRouter();
   const [userEmail, setUserEmail] = useState("");
+  const [isMaster, setIsMaster] = useState(false);
   const [contactedBusinesses, setContactedBusinesses] = useState<Business[]>([]);
   const [mounted, setMounted] = useState(false);
 
@@ -20,6 +21,7 @@ export default function ContatosPage() {
       router.push("/login");
     } else {
       setUserEmail(email);
+      setIsMaster(localStorage.getItem("isMaster") === "true");
       setMounted(true);
     }
   }, [router]);
@@ -58,7 +60,7 @@ export default function ContatosPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
-      <Header userEmail={userEmail} />
+      <Header userEmail={userEmail} isMaster={isMaster} />
 
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-7xl mx-auto">
