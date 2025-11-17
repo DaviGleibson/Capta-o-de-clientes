@@ -46,8 +46,6 @@ export default function DashboardPage() {
   const [hasSearched, setHasSearched] = useState(false);
   const [mapsLoaded, setMapsLoaded] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [hasMoreResults, setHasMoreResults] = useState(false);
   const [allBusinesses, setAllBusinesses] = useState<Business[]>([]);
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
   const [visiblePage, setVisiblePage] = useState(1);
@@ -183,14 +181,11 @@ export default function DashboardPage() {
         const updatedBusinesses = page === 1 ? detailedBusinesses : [...allBusinesses, ...detailedBusinesses];
         setAllBusinesses(updatedBusinesses);
         setBusinesses(updatedBusinesses);
-        setHasMoreResults(places.length === 20);
-        setCurrentPage(page);
       } else {
         if (page === 1) {
           setBusinesses([]);
           setAllBusinesses([]);
         }
-        setHasMoreResults(false);
       }
       setLoading(false);
     } catch (err) {
@@ -198,10 +193,6 @@ export default function DashboardPage() {
       console.error(err);
       setLoading(false);
     }
-  };
-
-  const handleLoadMore = () => {
-    handleSearch(currentPage + 1);
   };
 
   const handleContact = (businessId: string, type: "whatsapp" | "email") => {
@@ -516,18 +507,6 @@ export default function DashboardPage() {
                   </Pagination>
                 )}
 
-                {hasMoreResults && !loading && (
-                  <div className="mt-8 text-center">
-                    <Button
-                      onClick={handleLoadMore}
-                      variant="outline"
-                      size="lg"
-                      className="px-8"
-                    >
-                      Carregar mais resultados
-                    </Button>
-                  </div>
-                )}
               </>
             ) : (
               <Card className="p-12 text-center bg-white">
@@ -544,13 +523,6 @@ export default function DashboardPage() {
                 </div>
               </Card>
             )}
-          </div>
-        )}
-
-        {loading && currentPage > 1 && (
-          <div className="max-w-7xl mx-auto mt-8 text-center">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto text-blue-600" />
-            <p className="text-sm text-gray-600 mt-2">Carregando mais resultados...</p>
           </div>
         )}
 
