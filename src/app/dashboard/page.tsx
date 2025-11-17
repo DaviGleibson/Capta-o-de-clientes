@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Search, MapPin, Filter, Loader2, AlertCircle, Copy } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
@@ -12,6 +12,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationLink,
+  PaginationItem,
+  PaginationPrevious,
+  PaginationNext,
+} from "@/components/ui/pagination";
 import { useToast } from "@/components/ui/use-toast";
 import { brazilStates, stateCities } from "@/lib/brazil-locations";
 
@@ -22,6 +30,7 @@ declare global {
 }
 
 export default function DashboardPage() {
+  const PAGE_SIZE = 9;
   const router = useRouter();
   const [userEmail, setUserEmail] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -41,6 +50,7 @@ export default function DashboardPage() {
   const [hasMoreResults, setHasMoreResults] = useState(false);
   const [allBusinesses, setAllBusinesses] = useState<Business[]>([]);
   const [selectedEmails, setSelectedEmails] = useState<Set<string>>(new Set());
+  const [visiblePage, setVisiblePage] = useState(1);
 
   const { toast } = useToast();
 
@@ -246,6 +256,15 @@ export default function DashboardPage() {
   };
 
   const availableCities = selectedState ? stateCities[selectedState] || [] : [];
+  const totalPages = Math.ceil(filteredBusinesses.length / PAGE_SIZE);
+  const paginatedBusinesses = useMemo(() => {
+    const startIndex = (visiblePage - 1) * PAGE_SIZE;
+    return filteredBusinesses.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [filteredBusinesses, visiblePage]);
+
+  useEffect(() => {
+    setVisiblePage(1);
+  }, [filteredBusinesses.length]);
 
   if (!mounted) {
     return null;
@@ -445,7 +464,7 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredBusinesses.map((business) => (
+                  {paginatedBusinesses.map((business) => (
                     <BusinessCard
                       key={business.id}
                       business={business}
@@ -456,6 +475,46 @@ export default function DashboardPage() {
                     />
                   ))}
                 </div>
+
+                {totalPages > 1 && (
+                  <Pagination className="mt-8">
+                    <PaginationContent>
+                      <PaginationPrevious
+                        href="#"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          if (visiblePage > 1) {
+                            setVisiblePage((prev) => prev - 1);
+                          }
+                        }}
+                        className={visiblePage === 1 ? "pointer-events-none opacity-50" : ""}
+                      />
+                      {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => (
+                        <PaginationLink
+                          key={page}
+                          href="#"
+                          isActive={page === visiblePage}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            setVisiblePage(page);
+                          }}
+                        >
+                          {page}
+                        </PaginationLink>
+                      ))}
+                      <PaginationNext
+                        href="#"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          if (visiblePage < totalPages) {
+                            setVisiblePage((prev) => prev + 1);
+                          }
+                        }}
+                        className={visiblePage === totalPages ? "pointer-events-none opacity-50" : ""}
+                      />
+                    </PaginationContent>
+                  </Pagination>
+                )}
 
                 {hasMoreResults && !loading && (
                   <div className="mt-8 text-center">
