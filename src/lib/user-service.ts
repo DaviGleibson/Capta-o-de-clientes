@@ -1,13 +1,13 @@
 import bcrypt from "bcryptjs";
-import { supabaseServerClient } from "./supabase-server";
+import db from "./db";
 
 export interface UserRecord {
-  id: string;
+  id: number;
   email: string;
   password_hash: string;
   active: boolean;
   is_master: boolean;
-  created_at: string;
+  created_at: Date;
 }
 
 export interface PublicUser {
@@ -26,9 +26,11 @@ const MASTER_ACTIVE =
 export function toPublicUser(user: UserRecord): PublicUser {
   return {
     email: user.email,
-    active: user.active,
-    is_master: user.is_master,
-    created_at: user.created_at,
+    active: Boolean(user.active),
+    is_master: Boolean(user.is_master),
+    created_at: user.created_at instanceof Date 
+      ? user.created_at.toISOString() 
+      : String(user.created_at),
   };
 }
 
@@ -43,43 +45,47 @@ export async function ensureMasterUser() {
   }
 
   const passwordHash = await bcrypt.hash(MASTER_PASSWORD, 10);
-  await supabaseServerClient.from(USERS_TABLE).insert({
-    email: MASTER_EMAIL,
-    password_hash: passwordHash,
-    active: MASTER_ACTIVE,
-    is_master: true,
-  });
+  await db.execute(
+    `INSERT INTO ${USERS_TABLE} (email, password_hash, active, is_master) VALUES (?, ?, ?, ?)`,
+    [MASTER_EMAIL.toLowerCase(), passwordHash, MASTER_ACTIVE ? 1 : 0, 1]
+  );
 }
 
 export async function getUserByEmail(
   email: string,
 ): Promise<UserRecord | null> {
-  const { data, error } = await supabaseServerClient
-    .from<UserRecord>(USERS_TABLE)
-    .select("*")
-    .eq("email", email.toLowerCase())
-    .maybeSingle();
+  try {
+    const [rows] = await db.execute(
+      `SELECT * FROM ${USERS_TABLE} WHERE email = ? LIMIT 1`,
+      [email.toLowerCase()]
+    ) as [UserRecord[], any];
 
-  if (error) {
+    if (Array.isArray(rows) && rows.length > 0) {
+      return rows[0];
+    }
+
+    return null;
+  } catch (error) {
     console.error("Erro ao buscar usuário:", error);
     throw new Error("Erro ao buscar usuário");
   }
-
-  return data ?? null;
 }
 
 export async function listUsers(): Promise<PublicUser[]> {
-  const { data, error } = await supabaseServerClient
-    .from<UserRecord>(USERS_TABLE)
-    .select("*")
-    .order("created_at", { ascending: true });
+  try {
+    const [rows] = await db.execute(
+      `SELECT * FROM ${USERS_TABLE} ORDER BY created_at ASC`
+    ) as [UserRecord[], any];
 
-  if (error) {
+    if (Array.isArray(rows)) {
+      return rows.map(toPublicUser);
+    }
+
+    return [];
+  } catch (error) {
     console.error("Erro ao listar usuários:", error);
     throw new Error("Erro ao listar usuários");
   }
-
-  return (data || []).map(toPublicUser);
 }
 
 export async function verifyMasterAccess(requesterEmail?: string) {
@@ -127,23 +133,30 @@ export async function createUser(
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
-  const { data, error } = await supabaseServerClient
-    .from<UserRecord>(USERS_TABLE)
-    .insert({
-      email: normalizedEmail,
-      password_hash: passwordHash,
-      active: true,
-      is_master: options?.isMaster ?? false,
-    })
-    .select("*")
-    .maybeSingle();
+  try {
+    await db.execute(
+      `INSERT INTO ${USERS_TABLE} (email, password_hash, active, is_master) VALUES (?, ?, ?, ?)`,
+      [
+        normalizedEmail,
+        passwordHash,
+        1,
+        options?.isMaster ? 1 : 0,
+      ]
+    );
 
-  if (error || !data) {
+    const user = await getUserByEmail(normalizedEmail);
+    if (!user) {
+      throw new Error("Erro ao criar usuário");
+    }
+
+    return toPublicUser(user);
+  } catch (error: any) {
     console.error("Erro ao criar usuário:", error);
+    if (error.code === "ER_DUP_ENTRY") {
+      throw new Error("Usuário já existe");
+    }
     throw new Error("Erro ao criar usuário");
   }
-
-  return toPublicUser(data);
 }
 
 export async function updateUserStatus(
@@ -160,19 +173,41 @@ export async function updateUserStatus(
     throw new Error("Não é possível desativar o usuário master");
   }
 
-  const { data, error } = await supabaseServerClient
-    .from<UserRecord>(USERS_TABLE)
-    .update(updates)
-    .eq("email", normalizedEmail)
-    .select("*")
-    .maybeSingle();
+  const updateFields: string[] = [];
+  const updateValues: any[] = [];
 
-  if (error || !data) {
+  if (updates.active !== undefined) {
+    updateFields.push("active = ?");
+    updateValues.push(updates.active ? 1 : 0);
+  }
+
+  if (updates.is_master !== undefined) {
+    updateFields.push("is_master = ?");
+    updateValues.push(updates.is_master ? 1 : 0);
+  }
+
+  if (updateFields.length === 0) {
+    return toPublicUser(existing);
+  }
+
+  updateValues.push(normalizedEmail);
+
+  try {
+    await db.execute(
+      `UPDATE ${USERS_TABLE} SET ${updateFields.join(", ")} WHERE email = ?`,
+      updateValues
+    );
+
+    const user = await getUserByEmail(normalizedEmail);
+    if (!user) {
+      throw new Error("Usuário não encontrado após atualização");
+    }
+
+    return toPublicUser(user);
+  } catch (error) {
     console.error("Erro ao atualizar usuário:", error);
     throw new Error("Erro ao atualizar usuário");
   }
-
-  return toPublicUser(data);
 }
 
 export async function deleteUser(email: string): Promise<void> {
@@ -186,14 +221,13 @@ export async function deleteUser(email: string): Promise<void> {
     throw new Error("Não é possível excluir o usuário master");
   }
 
-  const { error } = await supabaseServerClient
-    .from<UserRecord>(USERS_TABLE)
-    .delete()
-    .eq("email", normalizedEmail);
-
-  if (error) {
+  try {
+    await db.execute(
+      `DELETE FROM ${USERS_TABLE} WHERE email = ?`,
+      [normalizedEmail]
+    );
+  } catch (error) {
     console.error("Erro ao excluir usuário:", error);
     throw new Error("Erro ao excluir usuário");
   }
 }
-
