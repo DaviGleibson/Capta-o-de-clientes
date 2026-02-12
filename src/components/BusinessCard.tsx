@@ -14,11 +14,14 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  prospectionStorage,
   computeOpportunityScore,
+  computeProbabilityOfClosing,
+  daysSinceLastContact,
   type VisitStatus,
   type PotentialLevel,
   type PipelineStage,
+  type NextActionRecord,
+  type NextActionType,
 } from "@/lib/prospection-storage";
 
 export interface Business {
@@ -51,6 +54,11 @@ interface BusinessCardProps {
   /** Pipeline stage (for Minha Prospecção) */
   pipelineStage?: PipelineStage | null;
   onPipelineChange?: (id: string, stage: PipelineStage) => void;
+  lastContactDate?: string | null;
+  nextAction?: NextActionRecord | null;
+  onNextActionChange?: (id: string, action: NextActionType, due: string) => void;
+  contractValue?: number | null;
+  onContractValueChange?: (id: string, value: number) => void;
 }
 
 export default function BusinessCard({
@@ -69,13 +77,22 @@ export default function BusinessCard({
   onSelectChange,
   pipelineStage = null,
   onPipelineChange,
+  lastContactDate = null,
+  nextAction = null,
+  onNextActionChange,
+  contractValue = null,
+  onContractValueChange,
 }: BusinessCardProps) {
   const { toast } = useToast();
   const [notesOpen, setNotesOpen] = useState(!!notes);
   const [localNotes, setLocalNotes] = useState(notes);
+  const [localContractValue, setLocalContractValue] = useState(String(contractValue ?? ""));
   useEffect(() => {
     setLocalNotes(notes);
   }, [notes]);
+  useEffect(() => {
+    setLocalContractValue(String(contractValue ?? ""));
+  }, [contractValue]);
 
   const handleWhatsApp = () => {
     if (business.phone) {
@@ -117,6 +134,17 @@ export default function BusinessCard({
   };
 
   const { score, max } = computeOpportunityScore(business, potential);
+  const probability = computeProbabilityOfClosing(
+    potential,
+    pipelineStage ?? null,
+    visitStatus ?? null,
+    business.rating,
+    score
+  );
+  const daysSince = daysSinceLastContact(lastContactDate ?? null);
+  const nextActionOverdue = nextAction?.due
+    ? new Date(nextAction.due) < new Date() && new Date(nextAction.due).toISOString().slice(0, 10) !== new Date().toISOString().slice(0, 10)
+    : false;
 
   return (
     <Card className={`relative overflow-hidden hover:shadow-lg transition-shadow duration-300 bg-white ${isSelected ? "ring-2 ring-blue-500" : ""}`}>
@@ -153,8 +181,76 @@ export default function BusinessCard({
               <Badge variant="outline" className="text-xs">
                 🎯 Score: {score}/{max}
               </Badge>
+              <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-800">
+                📊 Fechar: {probability}%
+              </Badge>
             </div>
           </div>
+
+          {daysSince != null && daysSince > 0 && (
+            <div className={`text-xs px-2 py-1.5 rounded-md ${daysSince > 12 ? "bg-amber-100 text-amber-800" : "bg-gray-100 text-gray-700"}`}>
+              🕒 Último contato: {daysSince} dia{daysSince !== 1 ? "s" : ""} atrás
+              {daysSince > 12 && " • ⚠ Recomendado retornar"}
+            </div>
+          )}
+
+          {onNextActionChange && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-gray-600">📅 Próxima ação</p>
+              <div className="flex flex-wrap gap-2 items-center">
+                <Select
+                  value={nextAction?.action ?? "none"}
+                  onValueChange={(v) => {
+                    if (v !== "none")
+                      onNextActionChange(business.id, v as NextActionType, nextAction?.due ?? new Date().toISOString().slice(0, 10));
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs w-[140px]">
+                    <SelectValue placeholder="Ação" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">—</SelectItem>
+                    <SelectItem value="ligar">Ligar</SelectItem>
+                    <SelectItem value="visitar">Visitar</SelectItem>
+                    <SelectItem value="enviar_proposta">Enviar proposta</SelectItem>
+                    <SelectItem value="aguardar_retorno">Aguardar retorno</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="date"
+                  className="h-8 w-[130px] text-xs"
+                  value={nextAction?.due ?? ""}
+                  onChange={(e) => {
+                    const due = e.target.value;
+                    if (due)
+                      onNextActionChange(business.id, nextAction?.action ?? "ligar", due);
+                  }}
+                />
+                {nextActionOverdue && (
+                  <span className="text-xs text-amber-600 font-medium">Vencida</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {pipelineStage === "cliente_fechado" && onContractValueChange && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-gray-600">💵 Valor estimado do contrato (R$)</p>
+              <Input
+                type="number"
+                min={0}
+                step={100}
+                placeholder="0"
+                className="h-8 text-sm"
+                value={localContractValue}
+                onChange={(e) => setLocalContractValue(e.target.value)}
+                onBlur={() => {
+                  const n = parseInt(localContractValue.replace(/\D/g, ""), 10);
+                  if (!isNaN(n) && n >= 0) onContractValueChange(business.id, n);
+                }}
+              />
+            </div>
+          )}
 
           <div className="flex items-start gap-2 text-sm text-gray-600">
             <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0 text-gray-400" />

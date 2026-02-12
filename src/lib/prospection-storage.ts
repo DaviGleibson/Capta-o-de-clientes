@@ -41,6 +41,23 @@ export type PotentialMap = Record<string, PotentialLevel>;
 export type NotesMap = Record<string, string>;
 export type PipelineMap = Record<string, PipelineStage>;
 
+export type NextActionType = "ligar" | "visitar" | "enviar_proposta" | "aguardar_retorno";
+export interface NextActionRecord {
+  action: NextActionType;
+  due: string; // ISO date
+}
+export type NextActionMap = Record<string, NextActionRecord>;
+export type LastContactMap = Record<string, string>; // id -> ISO date
+export type ContractValueMap = Record<string, number>; // id -> value in BRL
+export type NegociationStartMap = Record<string, string>; // id -> ISO date when entered em_negociacao
+
+const KEYS_EXTRA = {
+  LAST_CONTACT: "prospection_lastContact",
+  NEXT_ACTION: "prospection_nextAction",
+  CONTRACT_VALUE: "prospection_contractValue",
+  NEGOCIATION_START: "prospection_negociationStart",
+} as const;
+
 /** Minimal business data we persist for "Minha Prospecção" list */
 export interface ProspectionBusiness {
   id: string;
@@ -51,6 +68,7 @@ export interface ProspectionBusiness {
   rating?: number;
   userRatingsTotal?: number;
   cnpj?: string;
+  city?: string; // for "cidades mais trabalhadas"
 }
 
 export const prospectionStorage = {
@@ -105,6 +123,55 @@ export const prospectionStorage = {
   },
   getPipelineFor(id: string): PipelineStage | null {
     return this.getPipeline()[id] ?? null;
+  },
+
+  getLastContact(): LastContactMap {
+    return getJson<LastContactMap>(KEYS_EXTRA.LAST_CONTACT, {});
+  },
+  setLastContact(id: string, dateStr: string) {
+    const map = this.getLastContact();
+    map[id] = dateStr;
+    setJson(KEYS_EXTRA.LAST_CONTACT, map);
+  },
+  getLastContactFor(id: string): string | null {
+    return this.getLastContact()[id] ?? null;
+  },
+
+  getNextAction(): NextActionMap {
+    return getJson<NextActionMap>(KEYS_EXTRA.NEXT_ACTION, {});
+  },
+  setNextAction(id: string, record: NextActionRecord) {
+    const map = this.getNextAction();
+    map[id] = record;
+    setJson(KEYS_EXTRA.NEXT_ACTION, map);
+  },
+  getNextActionFor(id: string): NextActionRecord | null {
+    return this.getNextAction()[id] ?? null;
+  },
+
+  getContractValue(): ContractValueMap {
+    return getJson<ContractValueMap>(KEYS_EXTRA.CONTRACT_VALUE, {});
+  },
+  setContractValue(id: string, value: number) {
+    const map = this.getContractValue();
+    map[id] = value;
+    setJson(KEYS_EXTRA.CONTRACT_VALUE, map);
+  },
+  getContractValueFor(id: string): number | null {
+    const v = this.getContractValue()[id];
+    return v != null && v >= 0 ? v : null;
+  },
+
+  getNegociationStart(): NegociationStartMap {
+    return getJson<NegociationStartMap>(KEYS_EXTRA.NEGOCIATION_START, {});
+  },
+  setNegociationStart(id: string, dateStr: string) {
+    const map = this.getNegociationStart();
+    map[id] = dateStr;
+    setJson(KEYS_EXTRA.NEGOCIATION_START, map);
+  },
+  getNegociationStartFor(id: string): string | null {
+    return this.getNegociationStart()[id] ?? null;
   },
 
   getDailyGoal(): number {
@@ -179,4 +246,43 @@ export function computeOpportunityScore(
   if (potential === "alto") score += 2;
   else if (potential === "medio") score += 1;
   return { score: Math.min(score, max), max };
+}
+
+/** Probabilidade de fechar 0–100%: baseado em potencial, pipeline, visita, nota, score */
+export function computeProbabilityOfClosing(
+  potential: PotentialLevel | null,
+  pipeline: PipelineStage | null,
+  visitStatus: VisitStatus | null,
+  rating: number | undefined,
+  opportunityScore: number
+): number {
+  let p = 10; // base
+  if (potential === "alto") p += 25;
+  else if (potential === "medio") p += 15;
+  else if (potential === "baixo") p += 5;
+  if (pipeline === "em_negociacao") p += 20;
+  if (pipeline === "cliente_fechado") return 100;
+  if (visitStatus === "ja_visitei") p += 15;
+  if (rating != null && rating > 4.3) p += 10;
+  p += Math.round((opportunityScore / 10) * 15); // score 0–10 vira até +15
+  return Math.min(100, Math.max(0, p));
+}
+
+/** Dias desde último contato (lastContactDate ISO); null se nunca */
+export function daysSinceLastContact(lastContactIso: string | null): number | null {
+  if (!lastContactIso) return null;
+  const last = new Date(lastContactIso);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  last.setHours(0, 0, 0, 0);
+  const diff = Math.floor((today.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
+  return diff >= 0 ? diff : null;
+}
+
+/** Nível gamificação por total de clientes fechados */
+export function getGamificationLevel(fechadosCount: number): { label: string; emoji: string } {
+  if (fechadosCount >= 10) return { label: "Nível Ouro", emoji: "🏅" };
+  if (fechadosCount >= 5) return { label: "Nível Prata", emoji: "🥈" };
+  if (fechadosCount >= 1) return { label: "Nível Bronze", emoji: "🥉" };
+  return { label: "Iniciante", emoji: "🌱" };
 }

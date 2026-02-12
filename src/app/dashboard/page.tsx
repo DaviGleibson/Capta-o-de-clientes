@@ -24,6 +24,9 @@ import { useToast } from "@/components/ui/use-toast";
 import { brazilStates, stateCities } from "@/lib/brazil-locations";
 import {
   prospectionStorage,
+  computeProbabilityOfClosing,
+  daysSinceLastContact,
+  getGamificationLevel,
   type VisitStatusMap,
   type VisitRecord,
   type PotentialMap,
@@ -31,6 +34,8 @@ import {
   type NotesMap,
   type PipelineMap,
   type PipelineStage,
+  type NextActionRecord,
+  type NextActionType,
 } from "@/lib/prospection-storage";
 
 declare global {
@@ -77,8 +82,14 @@ export default function DashboardPage() {
   const [selectedBusinessIds, setSelectedBusinessIds] = useState<Set<string>>(new Set());
   const [filterPotentialAlto, setFilterPotentialAlto] = useState(false);
   const [filterEmpresasGrandes, setFilterEmpresasGrandes] = useState(false);
-  const [activeTab, setActiveTab] = useState<"busca" | "prospeccao">("busca");
+  const [activeTab, setActiveTab] = useState<"busca" | "prospeccao" | "dashboard">("busca");
   const [monthlyGoal, setMonthlyGoal] = useState(200);
+  const [lastContactMap, setLastContactMap] = useState<Record<string, string>>({});
+  const [nextActionMap, setNextActionMap] = useState<Record<string, NextActionRecord>>({});
+  const [contractValueMap, setContractValueMap] = useState<Record<string, number>>({});
+  const [negociationStartMap, setNegociationStartMap] = useState<Record<string, string>>({});
+  const [filterOportunidadeEsquecida, setFilterOportunidadeEsquecida] = useState(false);
+  const [showTop5Only, setShowTop5Only] = useState(false);
 
   const { toast } = useToast();
   const visitadosHoje = useMemo(() => {
@@ -120,6 +131,10 @@ export default function DashboardPage() {
       setPipelineMap(prospectionStorage.getPipeline());
       setDailyGoal(prospectionStorage.getDailyGoal());
       setMonthlyGoal(prospectionStorage.getMonthlyGoal());
+      setLastContactMap(prospectionStorage.getLastContact());
+      setNextActionMap(prospectionStorage.getNextAction());
+      setContractValueMap(prospectionStorage.getContractValue());
+      setNegociationStartMap(prospectionStorage.getNegociationStart());
     }
   }, [mounted]);
 
@@ -208,12 +223,24 @@ export default function DashboardPage() {
       filtered = filtered.filter(isBigBusiness);
     }
 
+    if (filterOportunidadeEsquecida) {
+      const today = new Date().toISOString().slice(0, 10);
+      filtered = filtered.filter((b) => {
+        const stage = pipelineMap[b.id];
+        if (stage !== "em_negociacao") return false;
+        const start = negociationStartMap[b.id];
+        if (!start) return false;
+        const days = Math.floor((new Date(today).getTime() - new Date(start).getTime()) / (1000 * 60 * 60 * 24));
+        return days > 15;
+      });
+    }
+
     setFilteredBusinesses(filtered);
-  }, [businesses, filterPhone, filterEmail, filterPotentialAlto, filterEmpresasGrandes, potentialMap]);
+  }, [businesses, filterPhone, filterEmail, filterPotentialAlto, filterEmpresasGrandes, filterOportunidadeEsquecida, potentialMap, pipelineMap, negociationStartMap]);
 
   useEffect(() => {
     setVisiblePage(1);
-  }, [filterPhone, filterEmail, filterPotentialAlto, filterEmpresasGrandes]);
+  }, [filterPhone, filterEmail, filterPotentialAlto, filterEmpresasGrandes, filterOportunidadeEsquecida, showTop5Only]);
 
   useEffect(() => {
     if (selectedCity && !availableCities.includes(selectedCity)) {
@@ -334,16 +361,20 @@ export default function DashboardPage() {
     newContacted.add(businessId);
     setContactedBusinesses(newContacted);
     localStorage.setItem("contactedBusinesses", JSON.stringify(Array.from(newContacted)));
+    const today = new Date().toISOString().slice(0, 10);
+    prospectionStorage.setLastContact(businessId, today);
+    setLastContactMap((prev) => ({ ...prev, [businessId]: today }));
 
     const business = businesses.find((b) => b.id === businessId);
     if (business) {
       const stored = localStorage.getItem("contactedBusinessesData");
       const contactedData: Business[] = stored ? JSON.parse(stored) : [];
-      
       if (!contactedData.find((b) => b.id === businessId)) {
         contactedData.push(business);
         localStorage.setItem("contactedBusinessesData", JSON.stringify(contactedData));
       }
+      const toAdd = { ...business, city: selectedCity || undefined };
+      prospectionStorage.addProspectionBusiness(toAdd);
     }
   };
 
@@ -379,7 +410,7 @@ export default function DashboardPage() {
 
   const ensureInProspeccao = (id: string) => {
     const b = getBusinessById(id);
-    if (b) prospectionStorage.addProspectionBusiness(b);
+    if (b) prospectionStorage.addProspectionBusiness({ ...b, city: selectedCity || undefined });
   };
 
   const handleVisitStatusChange = (id: string, status: "ja_visitei" | "visitar_depois" | "sem_interesse") => {
@@ -453,21 +484,39 @@ export default function DashboardPage() {
     toast({ title: "Exportado!", description: `${selected.length} empresa(s) em CSV` });
   };
 
-  const handleCreateRoute = () => {
-    const selected = filteredBusinesses.filter((b) => selectedBusinessIds.has(b.id));
+  const handleCreateRoute = (inteligente = false) => {
+    let selected = filteredBusinesses.filter((b) => selectedBusinessIds.has(b.id));
     if (selected.length === 0) {
       toast({ title: "Nenhuma empresa selecionada", description: "Marque os cards para criar a rota.", variant: "destructive" });
       return;
     }
+    if (inteligente) {
+      selected = [...selected].sort((a, b) => (a.address || "").localeCompare(b.address || ""));
+    }
     const addresses = selected.map((b) => encodeURIComponent(b.address));
     const url = `https://www.google.com/maps/dir/${addresses.join("/")}`;
     window.open(url, "_blank");
-    toast({ title: "Rota aberta", description: `${selected.length} destino(s) no Google Maps` });
+    toast({ title: "Rota aberta", description: `${selected.length} destino(s) no Google Maps${inteligente ? " (ordenada)" : ""}` });
   };
 
   const handlePipelineChange = (id: string, stage: PipelineStage) => {
+    const today = new Date().toISOString().slice(0, 10);
+    if (stage === "em_negociacao") {
+      prospectionStorage.setNegociationStart(id, today);
+      setNegociationStartMap((prev) => ({ ...prev, [id]: today }));
+    }
     prospectionStorage.setPipeline(id, stage);
     setPipelineMap((prev) => ({ ...prev, [id]: stage }));
+  };
+
+  const handleNextActionChange = (id: string, action: NextActionType, due: string) => {
+    prospectionStorage.setNextAction(id, { action, due });
+    setNextActionMap((prev) => ({ ...prev, [id]: { action, due } }));
+  };
+
+  const handleContractValueChange = (id: string, value: number) => {
+    prospectionStorage.setContractValue(id, value);
+    setContractValueMap((prev) => ({ ...prev, [id]: value }));
   };
 
   const handleGerarRelatorio = () => {
@@ -499,11 +548,28 @@ export default function DashboardPage() {
     }
   };
 
-  const totalPages = Math.ceil(filteredBusinesses.length / PAGE_SIZE);
+  // TOP 5 oportunidades: ordenar por alto potencial, nota alta, ainda não visitado
+  const displayBusinesses = useMemo(() => {
+    if (!showTop5Only) return filteredBusinesses;
+    const sorted = [...filteredBusinesses].sort((a, b) => {
+      const potA = potentialMap[a.id] === "alto" ? 3 : potentialMap[a.id] === "medio" ? 2 : 1;
+      const potB = potentialMap[b.id] === "alto" ? 3 : potentialMap[b.id] === "medio" ? 2 : 1;
+      if (potB !== potA) return potB - potA;
+      const ratingA = a.rating ?? 0;
+      const ratingB = b.rating ?? 0;
+      if (ratingB !== ratingA) return ratingB - ratingA;
+      const visitA = visitStatusMap[a.id]?.status === "ja_visitei" ? 0 : 1;
+      const visitB = visitStatusMap[b.id]?.status === "ja_visitei" ? 0 : 1;
+      return visitB - visitA;
+    });
+    return sorted.slice(0, 5);
+  }, [filteredBusinesses, showTop5Only, potentialMap, visitStatusMap]);
+
+  const totalPages = Math.ceil(displayBusinesses.length / PAGE_SIZE);
   const paginatedBusinesses = useMemo(() => {
     const startIndex = (visiblePage - 1) * PAGE_SIZE;
-    return filteredBusinesses.slice(startIndex, startIndex + PAGE_SIZE);
-  }, [filteredBusinesses, visiblePage]);
+    return displayBusinesses.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [displayBusinesses, visiblePage]);
 
   const prospeccaoBusinesses = useMemo(
     () => (typeof window !== "undefined" ? prospectionStorage.getProspectionBusinesses() : []),
@@ -570,9 +636,51 @@ export default function DashboardPage() {
     const total = filteredBusinesses.length;
     const altoPotencial = filteredBusinesses.filter((b) => potentialMap[b.id] === "alto").length;
     const jaVisitados = filteredBusinesses.filter((b) => visitStatusMap[b.id]?.status === "ja_visitei").length;
+    const emNegociacao = filteredBusinesses.filter((b) => pipelineMap[b.id] === "em_negociacao").length;
+    const fechados = filteredBusinesses.filter((b) => pipelineMap[b.id] === "cliente_fechado").length;
+    const conversao = jaVisitados > 0 ? Math.round((fechados / jaVisitados) * 100) : 0;
     const pendentes = total - jaVisitados;
-    return { total, altoPotencial, jaVisitados, pendentes };
-  }, [filteredBusinesses, potentialMap, visitStatusMap]);
+    return { total, altoPotencial, jaVisitados, pendentes, emNegociacao, fechados, conversao };
+  }, [filteredBusinesses, potentialMap, visitStatusMap, pipelineMap]);
+
+  // Receita estimada pipeline (soma valores dos fechados)
+  const receitaEstimadaPipeline = useMemo(() => {
+    return prospeccaoBusinesses
+      .filter((b) => pipelineMap[b.id] === "cliente_fechado")
+      .reduce((sum, b) => sum + (contractValueMap[b.id] ?? 0), 0);
+  }, [prospeccaoBusinesses, pipelineMap, contractValueMap]);
+
+  // Cidades mais trabalhadas (da lista de prospecção com city)
+  const cidadesMaisTrabalhadas = useMemo(() => {
+    const byCity: Record<string, number> = {};
+    prospeccaoBusinesses.forEach((b) => {
+      const city = (b as Business & { city?: string }).city || "Outros";
+      byCity[city] = (byCity[city] || 0) + 1;
+    });
+    return Object.entries(byCity)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+  }, [prospeccaoBusinesses]);
+
+  const fechadosCount = useMemo(
+    () => prospeccaoBusinesses.filter((b) => pipelineMap[b.id] === "cliente_fechado").length,
+    [prospeccaoBusinesses, pipelineMap]
+  );
+  const gamificationLevel = getGamificationLevel(fechadosCount);
+
+  // Analisar cidade: agrupar por bairro/região (primeira parte do endereço)
+  const analiseCidade = useMemo(() => {
+    if (filteredBusinesses.length === 0) return null;
+    const byArea: Record<string, number> = {};
+    filteredBusinesses.forEach((b) => {
+      const part = (b.address || "").split(",")[0]?.trim().slice(0, 35) || "Outros";
+      byArea[part] = (byArea[part] || 0) + 1;
+    });
+    const entries = Object.entries(byArea).sort((a, b) => b[1] - a[1]);
+    const top = entries[0];
+    const low = entries.length > 1 ? entries[entries.length - 1] : null;
+    return { byArea: entries, top, low, total: filteredBusinesses.length };
+  }, [filteredBusinesses]);
 
   const handlePreviousPage = () => {
     if (visiblePage > 1) {
@@ -603,10 +711,11 @@ export default function DashboardPage() {
       <Header userEmail={userEmail} isMaster={isMaster} />
 
       <main className="container mx-auto px-4 py-8">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "busca" | "prospeccao")} className="w-full">
-          <TabsList className="grid w-full max-w-md grid-cols-2 mb-6">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "busca" | "prospeccao" | "dashboard")} className="w-full">
+          <TabsList className="grid w-full max-w-2xl grid-cols-3 mb-6">
             <TabsTrigger value="busca">🔍 Busca</TabsTrigger>
             <TabsTrigger value="prospeccao">📂 Minha Prospecção</TabsTrigger>
+            <TabsTrigger value="dashboard">📈 Dashboard</TabsTrigger>
           </TabsList>
 
           <TabsContent value="busca" className="mt-0">
@@ -762,6 +871,16 @@ export default function DashboardPage() {
                     🏢 Mostrar empresas maiores
                   </Label>
                 </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="esquecida"
+                    checked={filterOportunidadeEsquecida}
+                    onCheckedChange={(checked) => setFilterOportunidadeEsquecida(checked as boolean)}
+                  />
+                  <Label htmlFor="esquecida" className="text-sm cursor-pointer">
+                    ⚠ Oportunidade esquecida (negociação &gt;15 dias)
+                  </Label>
+                </div>
               </div>
             </div>
           </Card>
@@ -875,7 +994,7 @@ export default function DashboardPage() {
           <div className="max-w-7xl mx-auto">
             {filteredBusinesses.length > 0 ? (
               <>
-                {/* Painel Resumo no topo */}
+                {/* Painel Resumo no topo + Taxa de conversão */}
                 <Card className="mb-6 p-4 bg-slate-50 border-slate-200">
                   <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
                     <BarChart3 className="h-4 w-4" />
@@ -885,6 +1004,9 @@ export default function DashboardPage() {
                     <span>Total encontrados: <strong>{resumoBusca.total}</strong></span>
                     <span>Alto potencial: <strong>{resumoBusca.altoPotencial}</strong></span>
                     <span>Já visitados: <strong>{resumoBusca.jaVisitados}</strong></span>
+                    <span>Em negociação: <strong>{resumoBusca.emNegociacao}</strong></span>
+                    <span>Fechados: <strong>{resumoBusca.fechados}</strong></span>
+                    <span>Conversão: <strong>{resumoBusca.conversao}%</strong></span>
                     <span>Pendentes: <strong>{resumoBusca.pendentes}</strong></span>
                   </div>
                 </Card>
@@ -906,42 +1028,62 @@ export default function DashboardPage() {
                   </p>
                 )}
 
+                {/* Analisar cidade */}
+                {analiseCidade && (
+                  <Card className="mb-6 p-4 bg-slate-50 border-slate-200">
+                    <h4 className="text-sm font-semibold text-gray-800 mb-2">📊 Analisar cidade</h4>
+                    <p className="text-sm text-gray-700 mb-2">
+                      {selectedCity || "A região"} tem <strong>{analiseCidade.total}</strong> {searchQuery.trim() || "negócios"} nesta busca.
+                      {analiseCidade.top && (
+                        <> Alta concentração em <strong>{analiseCidade.top[0]}</strong> ({analiseCidade.top[1]}).</>
+                      )}
+                      {analiseCidade.low && analiseCidade.byArea.length > 1 && (
+                        <> Região com menos resultados: <strong>{analiseCidade.low[0]}</strong> ({analiseCidade.low[1]}).</>
+                      )}
+                    </p>
+                    <details className="text-xs text-gray-600">
+                      <summary className="cursor-pointer">Ver por bairro/região</summary>
+                      <ul className="mt-2 space-y-1">
+                        {analiseCidade.byArea.slice(0, 10).map(([area, count]) => (
+                          <li key={area}><strong>{area}</strong>: {count}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  </Card>
+                )}
+
                 <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-                  <div>
+                  <div className="flex flex-wrap items-center gap-3">
                     <h3 className="text-lg font-semibold text-gray-900">
-                      {filteredBusinesses.length} negócio{filteredBusinesses.length !== 1 ? "s" : ""} encontrado{filteredBusinesses.length !== 1 ? "s" : ""}
+                      {showTop5Only ? "TOP 5 oportunidades" : `${displayBusinesses.length} negócio${displayBusinesses.length !== 1 ? "s" : ""} encontrado${displayBusinesses.length !== 1 ? "s" : ""}`}
                     </h3>
+                    <Button
+                      variant={showTop5Only ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setShowTop5Only(!showTop5Only)}
+                    >
+                      🔥 {showTop5Only ? "Mostrar todos" : "TOP 5 oportunidades"}
+                    </Button>
                     <p className="text-sm text-gray-600">
                       Clique nos botões para entrar em contato ou marque os emails para criar uma lista
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleGerarRelatorio}
-                      className="gap-2"
-                    >
-                      <FileText className="h-4 w-4" />
-                      Gerar relatório da região
+                    <Button variant="outline" size="sm" onClick={() => handleCreateRoute(true)} className="gap-2">
+                      <Route className="h-4 w-4" />
+                      Rota inteligente
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleExportCSV}
-                      className="gap-2"
-                    >
-                      <Upload className="h-4 w-4" />
-                      Exportar selecionados (CSV)
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleCreateRoute}
-                      className="gap-2"
-                    >
+                    <Button variant="outline" size="sm" onClick={() => handleCreateRoute(false)} className="gap-2">
                       <Route className="h-4 w-4" />
                       Criar rota
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleGerarRelatorio} className="gap-2">
+                      <FileText className="h-4 w-4" />
+                      Gerar relatório
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleExportCSV} className="gap-2">
+                      <Upload className="h-4 w-4" />
+                      Exportar CSV
                     </Button>
                   </div>
                 </div>
@@ -964,6 +1106,11 @@ export default function DashboardPage() {
                       onSelectChange={handleSelectChange}
                       pipelineStage={pipelineMap[business.id] ?? null}
                       onPipelineChange={handlePipelineChange}
+                      lastContactDate={lastContactMap[business.id] ?? null}
+                      nextAction={nextActionMap[business.id] ?? null}
+                      onNextActionChange={handleNextActionChange}
+                      contractValue={contractValueMap[business.id] ?? null}
+                      onContractValueChange={handleContractValueChange}
                     />
                   ))}
                 </div>
@@ -1099,6 +1246,11 @@ export default function DashboardPage() {
                           onPipelineChange={handlePipelineChange}
                           isSelected={selectedBusinessIds.has(business.id)}
                           onSelectChange={handleSelectChange}
+                          lastContactDate={lastContactMap[business.id] ?? null}
+                          nextAction={nextActionMap[business.id] ?? null}
+                          onNextActionChange={handleNextActionChange}
+                          contractValue={contractValueMap[business.id] ?? null}
+                          onContractValueChange={handleContractValueChange}
                         />
                       ))}
                     </div>
@@ -1108,6 +1260,63 @@ export default function DashboardPage() {
               {prospeccaoBusinesses.length === 0 && (
                 <Card className="p-8 text-center text-gray-500">
                   Nenhuma empresa na prospecção ainda. Faça uma busca e marque status/potencial nas empresas para vê-las aqui.
+                </Card>
+              )}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="dashboard" className="mt-0">
+            <div className="max-w-4xl mx-auto space-y-6">
+              <h2 className="text-2xl font-bold text-gray-900">📈 Dashboard Executivo</h2>
+              <div className="grid md:grid-cols-2 gap-6">
+                <Card className="p-6">
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">Total prospectado</h3>
+                  <p className="text-3xl font-bold text-gray-900">{prospeccaoBusinesses.length}</p>
+                  <p className="text-sm text-gray-600 mt-1">empresas na sua base</p>
+                </Card>
+                <Card className="p-6">
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">Clientes fechados</h3>
+                  <p className="text-3xl font-bold text-green-600">{fechadosCount}</p>
+                  <p className="text-sm text-gray-600 mt-1">{gamificationLevel.emoji} {gamificationLevel.label}</p>
+                </Card>
+                <Card className="p-6">
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">Conversão</h3>
+                  <p className="text-3xl font-bold text-blue-600">
+                    {prospeccaoBusinesses.filter((b) => visitStatusMap[b.id]?.status === "ja_visitei").length > 0
+                      ? Math.round((fechadosCount / prospeccaoBusinesses.filter((b) => visitStatusMap[b.id]?.status === "ja_visitei").length) * 100)
+                      : 0}%
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">visitados → fechados</p>
+                </Card>
+                <Card className="p-6">
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">💰 Receita estimada pipeline</h3>
+                  <p className="text-3xl font-bold text-gray-900">
+                    R$ {receitaEstimadaPipeline.toLocaleString("pt-BR")}
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">soma dos valores (clientes fechados)</p>
+                </Card>
+                <Card className="p-6">
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">🎯 Meta mensal</h3>
+                  <p className="text-3xl font-bold text-gray-900">{monthlyGoal}</p>
+                  <p className="text-sm text-gray-600 mt-1">visitados este mês: {Object.values(visitStatusMap).filter((r) => r.status === "ja_visitei" && r.date && r.date.slice(0, 7) === new Date().toISOString().slice(0, 7)).length}</p>
+                </Card>
+                <Card className="p-6">
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">🏆 Seu nível</h3>
+                  <p className="text-2xl font-bold text-gray-900">{gamificationLevel.emoji} {gamificationLevel.label}</p>
+                  <p className="text-sm text-gray-600 mt-1">{fechadosCount} cliente(s) fechado(s)</p>
+                </Card>
+              </div>
+              {cidadesMaisTrabalhadas.length > 0 && (
+                <Card className="p-6">
+                  <h3 className="text-sm font-medium text-gray-500 mb-3">📍 Cidades mais trabalhadas</h3>
+                  <ul className="space-y-2">
+                    {cidadesMaisTrabalhadas.map(([city, count]) => (
+                      <li key={city} className="flex justify-between text-sm">
+                        <span>{city}</span>
+                        <strong>{count} empresas</strong>
+                      </li>
+                    ))}
+                  </ul>
                 </Card>
               )}
             </div>
