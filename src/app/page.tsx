@@ -16,6 +16,9 @@ import {
   FolderOpen,
   ClipboardList,
   Upload,
+  TrendingUp,
+  DollarSign,
+  Award,
 } from "lucide-react";
 
 export default function LandingPage() {
@@ -26,61 +29,73 @@ export default function LandingPage() {
       icon: <MapPin className="h-8 w-8 text-blue-600" />,
       bg: "bg-blue-100",
       title: "Busca Inteligente",
-      description: "Encontre negócios por estado, município e categoria com a API do Google Maps. Ver no mapa com um clique.",
+      description: "Encontre negócios por estado, município e categoria com o Google Maps. Ver no mapa com um clique. Analise a cidade e veja concentração por região.",
     },
     {
       icon: <MessageCircle className="h-8 w-8 text-green-600" />,
       bg: "bg-green-100",
       title: "Contato Direto",
-      description: "WhatsApp e e-mail em um clique. Filtro “apenas com WhatsApp” para focar em quem responde rápido.",
+      description: "WhatsApp e e-mail em um clique. Filtro “apenas com WhatsApp”. Último contato registrado e alerta “Recomendado retornar”.",
     },
     {
       icon: <ClipboardList className="h-8 w-8 text-purple-600" />,
       bg: "bg-purple-100",
-      title: "Pipeline na Palma da Mão",
-      description: "Marque: Já visitei, Visitar depois ou Não tenho interesse. Tudo salvo e organizado por você.",
+      title: "Pipeline Completo",
+      description: "Novos, Visitados, Em negociação, Cliente fechado. Próxima ação (Ligar, Visitar, Enviar proposta) com data. Valor estimado do contrato nos fechados.",
     },
     {
       icon: <Target className="h-8 w-8 text-amber-600" />,
       bg: "bg-amber-100",
-      title: "Potencial por Empresa",
-      description: "Tag Potencial Alto, Médio ou Baixo. Filtro “mostrar apenas alto potencial” para priorizar leads.",
+      title: "Inteligência Comercial",
+      description: "Probabilidade de fechar % por empresa. Score de oportunidade. Potencial Alto/Médio/Baixo. TOP 5 oportunidades com um clique.",
     },
     {
       icon: <FileText className="h-8 w-8 text-indigo-600" />,
       bg: "bg-indigo-100",
-      title: "Observações por Empresa",
-      description: "Anote “Falar com gerente João”, “Retornar dia 20” e outras observações. Nunca perca o contexto.",
+      title: "Observações e Urgência",
+      description: "Anote observações por empresa. Indicador “Último contato: X dias atrás”. Filtro “Oportunidade esquecida” (negociação >15 dias).",
     },
     {
       icon: <Route className="h-8 w-8 text-red-600" />,
       bg: "bg-red-100",
-      title: "Rota de Visitação",
-      description: "Selecione várias empresas e crie a rota no Google Maps com múltiplos destinos. Ideal para vendedor externo.",
+      title: "Rota Inteligente",
+      description: "Selecione empresas e crie rota no Google Maps. Modo “Rota inteligente”: ordenada por endereço para otimizar o trajeto.",
     },
     {
       icon: <Upload className="h-8 w-8 text-emerald-600" />,
       bg: "bg-emerald-100",
-      title: "Exportar Lista",
-      description: "Exporte empresas selecionadas em CSV. Monte listas para e-mail ou planejamento fora do sistema.",
+      title: "Exportar e Relatório",
+      description: "Exporte selecionados em CSV. Botão “Gerar relatório da região” para copiar resumo (cidade, totais, alto potencial, fechados) para apresentação.",
     },
     {
-      icon: <Target className="h-8 w-8 text-cyan-600" />,
+      icon: <BarChart3 className="h-8 w-8 text-cyan-600" />,
       bg: "bg-cyan-100",
-      title: "Score de Oportunidade",
-      description: "Cada empresa ganha um score automático (WhatsApp, e-mail, avaliação, potencial). Foque nas melhores oportunidades.",
+      title: "Resumo e Conversão",
+      description: "Painel no topo: total, alto potencial, visitados, em negociação, fechados, conversão %. Indicador de saturação e potencial de mercado.",
     },
     {
-      icon: <BarChart3 className="h-8 w-8 text-violet-600" />,
+      icon: <TrendingUp className="h-8 w-8 text-violet-600" />,
       bg: "bg-violet-100",
-      title: "Meta do Dia",
-      description: "Defina sua meta de visitas e acompanhe “Visitados hoje”. Gamificação simples para manter o ritmo.",
+      title: "Dashboard Executivo",
+      description: "Aba dedicada: total prospectado, clientes fechados, conversão, receita estimada pipeline, meta mensal, cidades mais trabalhadas.",
     },
     {
-      icon: <FolderOpen className="h-8 w-8 text-orange-600" />,
+      icon: <Award className="h-8 w-8 text-orange-600" />,
       bg: "bg-orange-100",
+      title: "Meta e Gamificação",
+      description: "Meta do dia e visitados hoje. Meta mensal. Níveis: Ouro (10 fechados), Prata (5), Bronze (1). Ranking “X esta semana”.",
+    },
+    {
+      icon: <FolderOpen className="h-8 w-8 text-slate-600" />,
+      bg: "bg-slate-100",
       title: "Minha Prospecção",
-      description: "Aba dedicada: Novos, Visitados, Em negociação, Cliente fechado. Controle tipo CRM, sem complicação.",
+      description: "Aba com pipeline visual: Novos, Visitados, Em negociação, Cliente fechado. Tudo organizado e salvo para você.",
+    },
+    {
+      icon: <DollarSign className="h-8 w-8 text-green-700" />,
+      bg: "bg-green-100",
+      title: "Receita no Pipeline",
+      description: "Campo “Valor estimado do contrato” nos clientes fechados. Receita estimada pipeline no Dashboard. Visão de gestão.",
     },
   ];
 
@@ -120,13 +135,13 @@ export default function LandingPage() {
       {/* Hero */}
       <main className="container mx-auto px-4 py-16">
         <div className="max-w-4xl mx-auto text-center mb-20">
-          <p className="text-blue-600 font-semibold mb-2">Ferramenta de Prospecção Comercial Local</p>
+          <p className="text-blue-600 font-semibold mb-2">Ferramenta comercial de prospecção regional</p>
           <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
-            Conecte-se com Negócios Locais e Organize Suas Visitas
+            Mini CRM de Prospecção com Inteligência
           </h2>
           <p className="text-xl text-gray-600 mb-8">
-            Busque por categoria e região, marque status de visita, potencial e observações.
-            Crie rotas, exporte listas e acompanhe sua meta do dia — tudo em um só lugar.
+            Busca por região, pipeline (Novos → Visitados → Em negociação → Fechado), probabilidade de fechar,
+            próxima ação, receita estimada, conversão e dashboard executivo. Nível ferramenta comercial de verdade.
           </p>
           <div className="flex flex-wrap gap-4 justify-center">
             <Button
@@ -152,10 +167,10 @@ export default function LandingPage() {
         {/* Features grid */}
         <div className="max-w-6xl mx-auto mb-20">
           <h3 className="text-2xl font-bold text-gray-900 text-center mb-2">
-            Tudo o que você precisa para prospectar
+            Tudo que uma ferramenta comercial precisa
           </h3>
           <p className="text-gray-600 text-center mb-10">
-            Busca, pipeline, observações, rota e exportação — pensado para vendedor externo.
+            Pipeline, inteligência (probabilidade, urgência, TOP 5), rota inteligente, receita pipeline, conversão e gamificação.
           </p>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {features.map((f, i) => (
@@ -178,18 +193,16 @@ export default function LandingPage() {
               Onde ficam salvos meus dados?
             </h3>
             <p className="text-gray-700 mb-4">
-              Hoje, <strong>todos os dados da prospecção</strong> (status de visita, potencial, observações,
-              pipeline, meta do dia e lista de empresas) são salvos no <strong>navegador do seu computador ou celular</strong> (localStorage).
+              Hoje, <strong>todos os dados da prospecção</strong> (pipeline, próxima ação, valor do contrato,
+              último contato, observações, metas) são salvos no <strong>navegador</strong> (localStorage).
             </p>
             <ul className="list-disc list-inside text-gray-700 space-y-1 mb-4">
-              <li>Não são enviados ao servidor por enquanto.</li>
-              <li>Se você trocar de navegador ou de aparelho, essa prospecção não aparece lá.</li>
-              <li>Se limpar os dados do site no navegador, a prospecção é perdida.</li>
+              <li>Trocar de navegador ou aparelho = prospecção não acompanha.</li>
+              <li>Limpar dados do site = prospecção é perdida.</li>
+              <li>Login (e-mail/senha) é por perfil no servidor; o conteúdo da prospecção ainda é local.</li>
             </ul>
             <p className="text-gray-700">
-              Ou seja: <strong>não está vinculado ao seu perfil de usuário ainda</strong>. O login (e-mail/senha) é por perfil no servidor,
-              mas o conteúdo da prospecção é só local. Se no futuro quisermos que tudo fique salvo por perfil (em qualquer dispositivo),
-              será preciso guardar esses dados no servidor — podemos evoluir para isso.
+              Para salvar por perfil em qualquer dispositivo, seria preciso persistir no servidor — podemos evoluir para isso.
             </p>
           </Card>
         </div>
@@ -199,7 +212,7 @@ export default function LandingPage() {
           <Card className="p-12 text-center bg-gradient-to-br from-blue-600 to-purple-600 text-white">
             <h3 className="text-3xl font-bold mb-4">Pronto para começar?</h3>
             <p className="text-xl mb-8 text-blue-50">
-              Faça login e use a prospecção inteligente. Dúvidas? Fale com a Orbite no WhatsApp.
+              Faça login e use o mini CRM de prospecção com inteligência. Dúvidas? Fale com a Orbite no WhatsApp.
             </p>
             <Button
               size="lg"
