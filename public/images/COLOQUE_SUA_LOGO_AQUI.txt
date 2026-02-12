@@ -1,0 +1,5 @@
+Coloque seu arquivo de logo aqui com o nome:
+
+  logo.png
+
+Este arquivo será exibido na página inicial, no header do dashboard e na tela de login.

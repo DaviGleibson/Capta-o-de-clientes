@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -53,20 +54,14 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-4">
       <Card className="w-full max-w-md p-8 shadow-lg">
         <div className="text-center mb-8">
-          <div className="bg-gradient-to-br from-blue-600 to-purple-600 text-white rounded-lg p-3 w-16 h-16 flex items-center justify-center mx-auto mb-4">
-            <svg
-              className="h-8 w-8"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
+          <div className="relative w-20 h-20 mx-auto mb-4 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100">
+            <Image
+              src="/images/logo.png"
+              alt="Orbite LocalBiz Connect"
+              fill
+              className="object-contain"
+              sizes="80px"
+            />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Orbite LocalBiz Connect</h1>
           <p className="text-gray-600 mt-2">Entre com suas credenciais</p>
