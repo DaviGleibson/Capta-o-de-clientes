@@ -50,6 +50,11 @@ export default function BusinessCard({
     }
   };
 
+  const handleVerNoMapa = () => {
+    const query = encodeURIComponent(business.address);
+    window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, "_blank");
+  };
+
   return (
     <Card className="relative overflow-hidden hover:shadow-lg transition-shadow duration-300 bg-white">
       {isContacted && (
@@ -105,26 +110,37 @@ export default function BusinessCard({
             </div>
           )}
 
-          <div className="flex gap-2 pt-2">
+          <div className="flex flex-col gap-2 pt-2">
             <Button
-              onClick={handleWhatsApp}
-              disabled={!business.phone}
-              className="flex-1 bg-green-600 hover:bg-green-700 text-white gap-2"
-              size="sm"
-            >
-              <Phone className="h-4 w-4" />
-              WhatsApp
-            </Button>
-            <Button
-              onClick={handleEmail}
-              disabled={!business.email}
+              onClick={handleVerNoMapa}
               variant="outline"
-              className="flex-1 gap-2"
+              className="w-full gap-2"
               size="sm"
             >
-              <Mail className="h-4 w-4" />
-              E-mail
+              <MapPin className="h-4 w-4" />
+              Ver no mapa
             </Button>
+            <div className="flex gap-2">
+              <Button
+                onClick={handleWhatsApp}
+                disabled={!business.phone}
+                className="flex-1 bg-green-600 hover:bg-green-700 text-white gap-2"
+                size="sm"
+              >
+                <Phone className="h-4 w-4" />
+                WhatsApp
+              </Button>
+              <Button
+                onClick={handleEmail}
+                disabled={!business.email}
+                variant="outline"
+                className="flex-1 gap-2"
+                size="sm"
+              >
+                <Mail className="h-4 w-4" />
+                E-mail
+              </Button>
+            </div>
           </div>
         </div>
       </CardContent>
