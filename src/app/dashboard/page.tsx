@@ -467,6 +467,24 @@ export default function DashboardPage() {
     return filteredBusinesses.slice(startIndex, startIndex + PAGE_SIZE);
   }, [filteredBusinesses, visiblePage]);
 
+  const prospeccaoBusinesses = useMemo(
+    () => (typeof window !== "undefined" ? prospectionStorage.getProspectionBusinesses() : []),
+    [visitStatusMap, potentialMap, pipelineMap]
+  );
+  const prospeccaoByStage = useMemo(() => {
+    const m: Record<PipelineStage, Business[]> = {
+      novos: [],
+      visitados: [],
+      em_negociacao: [],
+      cliente_fechado: [],
+    };
+    prospeccaoBusinesses.forEach((b) => {
+      const stage = pipelineMap[b.id] ?? "novos";
+      m[stage].push(b as Business);
+    });
+    return m;
+  }, [prospeccaoBusinesses, pipelineMap]);
+
   const handlePreviousPage = () => {
     if (visiblePage > 1) {
       setVisiblePage((prev) => prev - 1);
@@ -490,24 +508,6 @@ export default function DashboardPage() {
   if (!mounted) {
     return null;
   }
-
-  const prospeccaoBusinesses = useMemo(
-    () => prospectionStorage.getProspectionBusinesses(),
-    [visitStatusMap, potentialMap, pipelineMap]
-  );
-  const prospeccaoByStage = useMemo(() => {
-    const m: Record<PipelineStage, Business[]> = {
-      novos: [],
-      visitados: [],
-      em_negociacao: [],
-      cliente_fechado: [],
-    };
-    prospeccaoBusinesses.forEach((b) => {
-      const stage = pipelineMap[b.id] ?? "novos";
-      m[stage].push(b as Business);
-    });
-    return m;
-  }, [prospeccaoBusinesses, pipelineMap]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50">
