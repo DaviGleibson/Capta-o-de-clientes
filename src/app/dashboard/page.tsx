@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Search, MapPin, Filter, Loader2, AlertCircle, Copy, Upload, Route } from "lucide-react";
+import { Search, MapPin, Filter, Loader2, AlertCircle, Copy, Upload, Route, BarChart3, FileText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import BusinessCard, { Business } from "@/components/BusinessCard";
@@ -76,7 +76,9 @@ export default function DashboardPage() {
   const [dailyGoal, setDailyGoal] = useState(20);
   const [selectedBusinessIds, setSelectedBusinessIds] = useState<Set<string>>(new Set());
   const [filterPotentialAlto, setFilterPotentialAlto] = useState(false);
+  const [filterEmpresasGrandes, setFilterEmpresasGrandes] = useState(false);
   const [activeTab, setActiveTab] = useState<"busca" | "prospeccao">("busca");
+  const [monthlyGoal, setMonthlyGoal] = useState(200);
 
   const { toast } = useToast();
   const visitadosHoje = useMemo(() => {
@@ -117,6 +119,7 @@ export default function DashboardPage() {
       setNotesMap(prospectionStorage.getNotes());
       setPipelineMap(prospectionStorage.getPipeline());
       setDailyGoal(prospectionStorage.getDailyGoal());
+      setMonthlyGoal(prospectionStorage.getMonthlyGoal());
     }
   }, [mounted]);
 
@@ -177,6 +180,14 @@ export default function DashboardPage() {
     fetchCities();
   }, [selectedState]);
 
+  // Heuristic: "empresas maiores" = muitas avaliações ou nome de rede conhecida
+  const isBigBusiness = (b: Business) => {
+    const minReviews = 30;
+    if (b.userRatingsTotal != null && b.userRatingsTotal >= minReviews) return true;
+    const bigChains = /atacadão|assaí|carrefour|extra|walmart|pao de açúcar|pão de açúcar|supermercado bom preço|giant|big|atacadista|atacadao|angeloni|zaffari|bourbon|são luiz|super nosso/i;
+    return bigChains.test(b.name || "");
+  };
+
   // Apply filters
   useEffect(() => {
     let filtered = [...businesses];
@@ -193,12 +204,16 @@ export default function DashboardPage() {
       filtered = filtered.filter((b) => potentialMap[b.id] === "alto");
     }
 
+    if (filterEmpresasGrandes) {
+      filtered = filtered.filter(isBigBusiness);
+    }
+
     setFilteredBusinesses(filtered);
-  }, [businesses, filterPhone, filterEmail, filterPotentialAlto, potentialMap]);
+  }, [businesses, filterPhone, filterEmail, filterPotentialAlto, filterEmpresasGrandes, potentialMap]);
 
   useEffect(() => {
     setVisiblePage(1);
-  }, [filterPhone, filterEmail, filterPotentialAlto]);
+  }, [filterPhone, filterEmail, filterPotentialAlto, filterEmpresasGrandes]);
 
   useEffect(() => {
     if (selectedCity && !availableCities.includes(selectedCity)) {
@@ -455,6 +470,29 @@ export default function DashboardPage() {
     setPipelineMap((prev) => ({ ...prev, [id]: stage }));
   };
 
+  const handleGerarRelatorio = () => {
+    const total = resumoBusca.total;
+    const altoPotencial = resumoBusca.altoPotencial;
+    const jaVisitados = resumoBusca.jaVisitados;
+    const emNegociacao = filteredBusinesses.filter((b) => pipelineMap[b.id] === "em_negociacao").length;
+    const categoria = searchQuery.trim() || "negócios";
+    const cidade = selectedCity || "N/A";
+    const estado = selectedState || "N/A";
+    const texto = [
+      `Na cidade de ${cidade}-${estado} existem ${total} ${categoria} ativos.`,
+      altoPotencial > 0 ? `${altoPotencial} com alto potencial.` : "",
+      jaVisitados > 0 ? `${jaVisitados} já visitados.` : "",
+      emNegociacao > 0 ? `${emNegociacao} com negociação aberta.` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    navigator.clipboard.writeText(texto);
+    toast({
+      title: "Relatório copiado!",
+      description: "Cole no seu documento ou apresentação.",
+    });
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       handleSearch(1);
@@ -484,6 +522,57 @@ export default function DashboardPage() {
     });
     return m;
   }, [prospeccaoBusinesses, pipelineMap]);
+
+  // Indicador de saturação: muitas empresas na mesma "rua" (trecho do endereço)
+  const saturationWarning = useMemo(() => {
+    if (filteredBusinesses.length < 10) return null;
+    const byStreet: Record<string, number> = {};
+    filteredBusinesses.forEach((b) => {
+      const street = (b.address || "").split(",")[0]?.trim().slice(0, 40) || "outros";
+      byStreet[street] = (byStreet[street] || 0) + 1;
+    });
+    const maxInStreet = Math.max(...Object.values(byStreet), 0);
+    return maxInStreet >= 15 ? true : null;
+  }, [filteredBusinesses]);
+
+  // Mensagem de potencial de mercado (baseado na quantidade)
+  const marketPotentialMessage = useMemo(() => {
+    const n = filteredBusinesses.length;
+    if (n >= 15) return "Mercado competitivo – oportunidade para fornecedor de diferenciação.";
+    if (n >= 8) return "Mercado com boa densidade de negócios na região.";
+    return null;
+  }, [filteredBusinesses.length]);
+
+  // Ranking: visitados esta semana (a partir do mapa)
+  const visitadosEstaSemana = useMemo(() => {
+    const map = visitStatusMap;
+    const now = new Date();
+    const day = now.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMonday);
+    monday.setHours(0, 0, 0, 0);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const startStr = monday.toISOString().slice(0, 10);
+    const endStr = sunday.toISOString().slice(0, 10);
+    return Object.values(map).filter(
+      (r) =>
+        r.status === "ja_visitei" &&
+        r.date &&
+        r.date >= startStr &&
+        r.date <= endStr
+    ).length;
+  }, [visitStatusMap]);
+
+  // Resumo da busca (totais sobre filteredBusinesses)
+  const resumoBusca = useMemo(() => {
+    const total = filteredBusinesses.length;
+    const altoPotencial = filteredBusinesses.filter((b) => potentialMap[b.id] === "alto").length;
+    const jaVisitados = filteredBusinesses.filter((b) => visitStatusMap[b.id]?.status === "ja_visitei").length;
+    const pendentes = total - jaVisitados;
+    return { total, altoPotencial, jaVisitados, pendentes };
+  }, [filteredBusinesses, potentialMap, visitStatusMap]);
 
   const handlePreviousPage = () => {
     if (visiblePage > 1) {
@@ -663,32 +752,69 @@ export default function DashboardPage() {
                     Mostrar apenas alto potencial
                   </Label>
                 </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="big"
+                    checked={filterEmpresasGrandes}
+                    onCheckedChange={(checked) => setFilterEmpresasGrandes(checked as boolean)}
+                  />
+                  <Label htmlFor="big" className="text-sm cursor-pointer">
+                    🏢 Mostrar empresas maiores
+                  </Label>
+                </div>
               </div>
             </div>
           </Card>
         </div>
 
-        {/* Daily progress */}
+        {/* Ranking + Daily progress */}
         <div className="max-w-4xl mx-auto mb-6">
           <Card className="p-4 bg-white">
-            <div className="flex flex-wrap items-center gap-4">
-              <span className="text-sm font-medium text-gray-700">📊 Meta do dia:</span>
-              <Input
-                type="number"
-                min={0}
-                value={dailyGoal}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10);
-                  if (!isNaN(v) && v >= 0) {
-                    setDailyGoal(v);
-                    prospectionStorage.setDailyGoal(v);
-                  }
-                }}
-                className="w-20 h-9"
-              />
-              <span className="text-sm text-gray-600">
-                Visitados hoje: <strong>{visitadosHoje}</strong>
-              </span>
+            <div className="flex flex-wrap items-center gap-6">
+              <div className="flex flex-wrap items-center gap-4">
+                <span className="text-sm font-medium text-gray-700">📊 Meta do dia:</span>
+                <Input
+                  type="number"
+                  min={0}
+                  value={dailyGoal}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    if (!isNaN(v) && v >= 0) {
+                      setDailyGoal(v);
+                      prospectionStorage.setDailyGoal(v);
+                    }
+                  }}
+                  className="w-20 h-9"
+                />
+                <span className="text-sm text-gray-600">
+                  Visitados hoje: <strong>{visitadosHoje}</strong>
+                </span>
+              </div>
+              <div className="h-4 w-px bg-gray-200" />
+              <div className="flex flex-wrap items-center gap-4 text-sm">
+                <span className="text-gray-700">
+                  🏆 Você já prospectou <strong>{prospeccaoBusinesses.length}</strong> empresas
+                </span>
+                <span className="text-orange-600">
+                  🔥 <strong>{visitadosEstaSemana}</strong> esta semana
+                </span>
+                <span className="text-gray-700">
+                  🎯 Meta mensal:{" "}
+                  <Input
+                    type="number"
+                    min={0}
+                    value={monthlyGoal}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      if (!isNaN(v) && v >= 0) {
+                        setMonthlyGoal(v);
+                        prospectionStorage.setMonthlyGoal(v);
+                      }
+                    }}
+                    className="w-16 h-8 inline-block mx-1 text-center"
+                  />
+                </span>
+              </div>
             </div>
           </Card>
         </div>
@@ -749,6 +875,37 @@ export default function DashboardPage() {
           <div className="max-w-7xl mx-auto">
             {filteredBusinesses.length > 0 ? (
               <>
+                {/* Painel Resumo no topo */}
+                <Card className="mb-6 p-4 bg-slate-50 border-slate-200">
+                  <h4 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4" />
+                    Resumo da busca
+                  </h4>
+                  <div className="flex flex-wrap gap-6 text-sm">
+                    <span>Total encontrados: <strong>{resumoBusca.total}</strong></span>
+                    <span>Alto potencial: <strong>{resumoBusca.altoPotencial}</strong></span>
+                    <span>Já visitados: <strong>{resumoBusca.jaVisitados}</strong></span>
+                    <span>Pendentes: <strong>{resumoBusca.pendentes}</strong></span>
+                  </div>
+                </Card>
+
+                {/* Indicador de saturação */}
+                {saturationWarning && (
+                  <Alert className="mb-6 border-amber-300 bg-amber-50">
+                    <AlertCircle className="h-4 w-4 text-amber-600" />
+                    <AlertDescription>
+                      ⚠ Região com alta concorrência – muitas empresas do mesmo tipo nesta área.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {/* Mensagem potencial de mercado */}
+                {marketPotentialMessage && (
+                  <p className="mb-6 text-sm text-gray-600 bg-blue-50 border border-blue-200 rounded-md px-4 py-2">
+                    💡 {marketPotentialMessage}
+                  </p>
+                )}
+
                 <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900">
@@ -758,7 +915,16 @@ export default function DashboardPage() {
                       Clique nos botões para entrar em contato ou marque os emails para criar uma lista
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleGerarRelatorio}
+                      className="gap-2"
+                    >
+                      <FileText className="h-4 w-4" />
+                      Gerar relatório da região
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"

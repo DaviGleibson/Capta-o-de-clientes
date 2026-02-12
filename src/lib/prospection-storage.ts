@@ -17,6 +17,7 @@ const KEYS = {
   NOTES: "prospection_notes",
   PIPELINE: "prospection_pipeline",
   DAILY_GOAL: "prospection_dailyGoal",
+  MONTHLY_GOAL: "prospection_monthlyGoal",
   BUSINESSES: "prospection_businesses",
 } as const;
 
@@ -114,12 +115,43 @@ export const prospectionStorage = {
     setJson(KEYS.DAILY_GOAL, Math.max(0, Math.floor(goal)));
   },
 
+  getMonthlyGoal(): number {
+    const n = getJson<number>(KEYS.MONTHLY_GOAL, 200);
+    return typeof n === "number" && n >= 0 ? n : 200;
+  },
+  setMonthlyGoal(goal: number) {
+    setJson(KEYS.MONTHLY_GOAL, Math.max(0, Math.floor(goal)));
+  },
+
   /** Count of businesses marked "ja_visitei" with today's date */
   getVisitadosHojeCount(): number {
     const map = this.getVisitStatus();
     const today = new Date().toISOString().slice(0, 10);
     return Object.values(map).filter(
       (r) => r.status === "ja_visitei" && r.date === today
+    ).length;
+  },
+
+  /** Count of businesses marked "ja_visitei" with date in current week (Mon–Sun) */
+  getVisitadosEstaSemanaCount(): number {
+    const map = this.getVisitStatus();
+    const now = new Date();
+    const day = now.getDay();
+    const diffToMonday = day === 0 ? -6 : 1 - day;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMonday);
+    monday.setHours(0, 0, 0, 0);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+    const startStr = monday.toISOString().slice(0, 10);
+    const endStr = sunday.toISOString().slice(0, 10);
+    return Object.values(map).filter(
+      (r) =>
+        r.status === "ja_visitei" &&
+        r.date &&
+        r.date >= startStr &&
+        r.date <= endStr
     ).length;
   },
 
